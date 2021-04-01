@@ -1,0 +1,301 @@
+---
+title: "Critical atmospheric events and it's health and economic impact"
+author: "fprandini"
+date: "3/31/2021"
+output: html_document
+---
+
+```{r}
+## Prepare the environment
+setwd("/Volumes/GoogleDrive/My Drive/JohnHopkinsDataScience/datasciencecoursera/5_REPDATA/RepData_PeerAssessment2")
+##Avoid scientific notation
+options (scipen = 999)
+##load libraries
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(gridExtra)
+library(reshape2)
+
+```
+
+## Synopsis
+
+The objective of this analysis is to provide an overview of the most impactful atmospheric events that occurred in US from 1950 to 2011.
+To achieve this we will use the NOAA storms database and investigate the impact by event types breaking it down into 2 questions:
+
+ * Across the United States, which types of events are most harmful with respect to population health? 
+ * Across the United States, which types of events have the greatest economic consequences?
+
+We have found that **tornadoes** account for the event type that should require highest level of preparedness to avoid the public health impact
+In order to avoid economic impact, **public managers should prepare and avoid floods.**
+
+## Introduction
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+
+## Data Processing
+
+### About the data
+
+The data for this analysis come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).
+
+There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.
+
+ * National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+ * National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+### Loading the data
+
+```{r, cache=TRUE}
+path <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(path, destfile = "StormData.csv.bz2", method = "curl")
+stormdata <- read.csv("StormData.csv.bz2", header = TRUE, sep = ",", dec = ".")
+```
+
+### Adjusting the data
+
+Change the BGN_DATE to date format
+
+```{r}
+stormdata$BGN_DATE <- sub(" 0:00:00", "", stormdata$BGN_DATE)
+stormdata$BGN_DATE <- as.Date(stormdata$BGN_DATE, format = "%m/%d/%Y")
+```
+
+Remove all columns except the interest ones ("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")
+
+```{r}
+stormdata <- stormdata[, c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+```
+
+Convert the DMG amounts using the PROPDMGEXP and CROPDMGEXP exponents. I based the conversion on the table of conversion provided by [this analysis](https://rstudio-pubs-static.s3.amazonaws.com/58957_37b6723ee52b455990e149edde45e5b6.html)
+
+```{r}
+## first, let's upper and trim all data
+stormdata$PROPDMGEXP <- toupper(stormdata$PROPDMGEXP)
+stormdata$CROPDMGEXP <- toupper(stormdata$CROPDMGEXP)
+stormdata$PROPDMGEXP <- trimws(stormdata$PROPDMGEXP)
+stormdata$CROPDMGEXP <- trimws(stormdata$CROPDMGEXP)
+
+## Then create new variable called propdmgvalue based on the table of conversion
+stormdata$PROPDMGVALUE <- stormdata$PROPDMG
+stormdata[stormdata$PROPDMGEXP == "H", ]$PROPDMGVALUE <- stormdata[stormdata$PROPDMGEXP == "H", ]$PROPDMG * 1e+02
+stormdata[stormdata$PROPDMGEXP == "K", ]$PROPDMGVALUE <- stormdata[stormdata$PROPDMGEXP == "K", ]$PROPDMG * 1e+03
+stormdata[stormdata$PROPDMGEXP == "M", ]$PROPDMGVALUE <- stormdata[stormdata$PROPDMGEXP == "M", ]$PROPDMG * 1e+06
+stormdata[stormdata$PROPDMGEXP == "B", ]$PROPDMGVALUE <- stormdata[stormdata$PROPDMGEXP == "B", ]$PROPDMG * 1e+09
+stormdata[stormdata$PROPDMGEXP %in% c("0", "1", "2", "3", "4", "5", "6", "7", "8"), ]$PROPDMGVALUE <- stormdata[stormdata$PROPDMGEXP %in% c("0", "1", "2", "3", "4", "5", "6", "7", "8"), ]$PROPDMG * 1e+01
+
+## Then create new variable called cropdmgvalue based on the table of conversion
+stormdata$CROPDMGVALUE <- stormdata$CROPDMG
+stormdata[stormdata$CROPDMGEXP == "H", ]$CROPDMGVALUE <- stormdata[stormdata$CROPDMGEXP == "H", ]$CROPDMG * 1e+02
+stormdata[stormdata$CROPDMGEXP == "K", ]$CROPDMGVALUE <- stormdata[stormdata$CROPDMGEXP == "K", ]$CROPDMG * 1e+03
+stormdata[stormdata$CROPDMGEXP == "M", ]$CROPDMGVALUE <- stormdata[stormdata$CROPDMGEXP == "M", ]$CROPDMG * 1e+06
+stormdata[stormdata$CROPDMGEXP == "B", ]$CROPDMGVALUE <- stormdata[stormdata$CROPDMGEXP == "B", ]$CROPDMG * 1e+09
+stormdata[stormdata$CROPDMGEXP %in% c("0", "1", "2", "3", "4", "5", "6", "7", "8"), ]$CROPDMGVALUE <- stormdata[stormdata$CROPDMGEXP %in% c("0", "1", "2", "3", "4", "5", "6", "7", "8"), ]$CROPDMG * 1e+01
+```
+
+Create column of DMGTOTALVALUE based on PROPDMGVALUE and CROPDMGVALUE
+```{r}
+stormdata$DMGTOTALVALUE <- stormdata$PROPDMGVALUE + stormdata$CROPDMGVALUE
+```
+
+
+Correct for typos and multiple different EVTYPE forms. There should be 48 official event types.
+
+```{r}
+uniq <- unique(stormdata$EVTYPE)
+length(uniq)
+```
+
+The amount of data is too big to correct those 985 unique EVTYPEs mapping back to the original 48.
+I'll Remove zeroed rows for DMGTOTALVALUE trying to reduce the amount of data and correction to be made:
+
+```{r}
+stormdata <- stormdata %>% filter(DMGTOTALVALUE > 0)
+##stormdata <- stormdata %>% filter(BGN_DATE >= as.Date("1990-01-01"))
+uniq2 <- unique(stormdata$EVTYPE)
+length(uniq2)
+```
+
+
+```{r}
+stormdata$EVTYPE <- tolower(stormdata$EVTYPE)
+stormdata$EVTYPE <- trimws(stormdata$EVTYPE)
+
+# Avalanche
+stormdata$EVTYPE <- gsub(".*avala.*", "avalanche", stormdata$EVTYPE)
+# Snow
+stormdata$EVTYPE <- gsub(".*snow.*", "snow", stormdata$EVTYPE)
+# Tornado
+stormdata$EVTYPE <- gsub(".*tornado.*", "tornado", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*torndao*", "tornado", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*landspout.*", "tornado", stormdata$EVTYPE)
+# Fire
+stormdata$EVTYPE <- gsub(".*fire.*", "fire", stormdata$EVTYPE)
+# Hurricane
+stormdata$EVTYPE <- gsub(".*hurricane.*", "hurricane", stormdata$EVTYPE)
+# Tsunami
+stormdata$EVTYPE <- gsub(".*tsunami.*", "tsunami", stormdata$EVTYPE)
+# Volcanic
+stormdata$EVTYPE <- gsub(".*volc.*", "volcanic activity", stormdata$EVTYPE)
+# Fog
+stormdata$EVTYPE <- gsub(".*fog.*", "fog", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*vog.*", "fog", stormdata$EVTYPE)
+# Lightning
+stormdata$EVTYPE <- gsub(".*light.*", "lightning", stormdata$EVTYPE)
+# Dryness
+stormdata$EVTYPE <- gsub(".*dry.*", "dryness", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*drie.*", "dryness", stormdata$EVTYPE)
+# Other arine related
+stormdata$EVTYPE <- gsub(".*marin.*", "other marine related", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*tide.*", "other marine related", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*surf.*", "other marine related", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*seas.*", "other marine related", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*waves.*", "other marine related", stormdata$EVTYPE)
+# Rip current
+stormdata$EVTYPE <- gsub(".*rip.*", "landslide, rock slide or mudslide", stormdata$EVTYPE)
+# Landslides (landslide, rockslide, mudslide)
+stormdata$EVTYPE <- gsub(".*slide.*", "landslide, rock slide or mudslide", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*slump.*", "landslide, rock slide or mudslide", stormdata$EVTYPE)
+# Flood
+stormdata$EVTYPE <- gsub(".*flood.*", "flood", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*flooo.*", "flood", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*floy.*", "flood", stormdata$EVTYPE)
+# Hail
+stormdata$EVTYPE <- gsub(".*hail.*", "hail", stormdata$EVTYPE)
+# Waterspout
+stormdata$EVTYPE <- gsub(".*spout.*", "waterspout", stormdata$EVTYPE)
+# rain
+stormdata$EVTYPE <- gsub(".*rain.*", "rain", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*precip.*", "rain", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*shower*", "rain", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*sleet.*", "rain", stormdata$EVTYPE)
+# Heat
+stormdata$EVTYPE <- gsub(".*heat.*", "heat", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*hot.*", "heat", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*warm.*", "heat", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*high temperature.*", "heat", stormdata$EVTYPE)
+# cold
+stormdata$EVTYPE <- gsub(".*cold.*", "cold", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*frost.*", "cold", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*cool.*", "cold", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*wint.*", "cold", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*low temperature.*", "cold", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*freez.*", "cold", stormdata$EVTYPE)
+# Winds
+stormdata$EVTYPE <- gsub(".*wind.*", "wind", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*wnd.*", "wind", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub(".*w ind.*", "wind", stormdata$EVTYPE)
+# Storm
+stormdata$EVTYPE <- gsub(".*storm.*", "storm", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub("^storm", "storm", stormdata$EVTYPE)
+stormdata$EVTYPE <- gsub("storm$", "storm", stormdata$EVTYPE)
+
+
+
+uniq3 <- unique(stormdata$EVTYPE)
+length(uniq3)
+```
+
+
+
+
+## Results
+
+### Q1 - Population Health impact of events types
+**Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?**
+
+First, let's take a look at overall incidence and death tool on each event type
+
+```{r}
+stormdata %>% 
+    group_by(EVTYPE) %>% 
+    summarise(deaths = sum(FATALITIES), n = n(), .groups = "keep") %>% 
+    arrange(desc(deaths)) %>% 
+    head(5)
+```
+Now, let's take a look at overall incidence and injuries on each event type
+
+```{r}
+stormdata %>% group_by(EVTYPE) %>% summarise(injuries = sum(INJURIES), n = n(), .groups = "keep") %>% arrange(desc(injuries)) %>% head(5)
+```
+
+Let's visualize the impact on total deaths and injuries and compare with the incidence of the event per decade
+
+```{r}
+output1_1 <- stormdata %>% 
+    group_by(EVTYPE) %>% 
+    summarise(injuries = sum(INJURIES), deaths = sum(FATALITIES), .groups = "keep") %>% 
+    arrange(desc(injuries)) %>% head(10)
+output1_1 <- melt(output1_1, id = "EVTYPE")
+names(output1_1) <- c("EVTYPE", "outcome", "value")
+plot1_1 <- ggplot(output1_1, aes(fill = outcome, y = value, x = reorder(EVTYPE, -value))) + 
+    geom_bar(position = "stack", stat = "identity") +
+    ggtitle("Population impact by main events") +
+    xlab("Event Type") +
+    ylab("Number of casualties")
+decades <- floor((max(as.numeric(format(stormdata$BGN_DATE, format = "%Y"))) - min(as.numeric(format(stormdata$BGN_DATE, format = "%Y"))))/10)
+top_events <- unlist(as.list(output1_1[1:10, "EVTYPE"]))
+output1_2 <- stormdata %>% 
+    filter(EVTYPE %in% top_events) %>%
+    group_by(EVTYPE) %>% 
+    summarise(incidence = floor(n()/decades), .groups = "keep") %>% 
+    arrange(desc(incidence)) %>% head(10)
+plot1_2 <- ggplot(output1_2, aes(y = incidence, x = reorder(EVTYPE, -incidence), group = 1)) + 
+    geom_line() +
+    ggtitle("Events incidence per decade") +
+    xlab("Event Type") +
+    ylab("Incidence per decade")
+plot1_1
+plot1_2
+```
+
+Winds, tornadoes and floods are the most common incidents that happen.  
+They are also the most impactful in terms of public health.  
+If needed **resources should be prioritized for tornado**, being the 2nd most common incident, with the highest death tool and injuries of all events.
+
+
+
+
+### Q2 - Economic impact of events types
+**Across the United States, which types of events have the greatest economic consequences?**
+
+First, let's take a look at overall incidence and economic impact on each event type. The ecnomic impat is the sum of PROP + CROP DMG
+```{r}
+stormdata %>% 
+    group_by(EVTYPE) %>% 
+    summarise(damageBn = sum(DMGTOTALVALUE)/1e+09, n = n(), .groups = "keep") %>% 
+    arrange(desc(damageBn)) %>% 
+    head(5)
+```
+
+Let's visualize the impact of total damage per event type
+```{r}
+output2 <- stormdata %>% 
+    group_by(EVTYPE) %>% 
+    summarise(damageBn = sum(DMGTOTALVALUE)/1e+09, n = n(), .groups = "keep") %>% 
+    arrange(desc(damageBn)) %>% 
+    head(5)
+plot2 <- ggplot(output2, aes(y = damageBn, x = reorder(EVTYPE, -damageBn))) + 
+    geom_bar(stat = "identity") +
+    ggtitle("Events economic damage") +
+    xlab("Event Type") +
+    ylab("Damage (Bn USD)")
+plot2
+```
+
+In terms of economic damage, the most impactful event types are Floods, Hurricanes and Storms
+
+If needed **resources should be prioritized to avoid floods**, being the most economic impactful event type
+
+## Findings
+
+In the united states, from 1950 to 2011, several atmospheric events happened but economic and health damage are concentrated in few event types
+
+ * In terms of public health impact, tornadoes are by far the most impactful with the highest death and injuries tool. They are also the second most occurring events
+ * In terms of economic damage, floods are the most impactful events, closely followed by hurricanes, storms and tornadoes
